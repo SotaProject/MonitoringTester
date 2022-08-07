@@ -1,0 +1,9 @@
+version: "3"
+
+services:
+  serv:
+    build: .
+    container_name: 'MonitoringTester'
+    environment:
+      TOKEN: "926f09a3-0cb6-4199-967e-29522dc4364c"
+      SERVER: "https://example.com"
