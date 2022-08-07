@@ -4,51 +4,54 @@ import json
 import os
 
 
-def send_report(tests: list):
-    payload = {'token': os.environ.get('TOKEN'), "tests": tests}
-    r = requests.post(f'{os.environ.get("SERVER")}/send_result/', data=payload)
-
-    time.sleep(300)
+VERSION = '0.1'
 
 
-def test(domain: str):
-    tests_failed = []
+def send_report(results: dict) -> int:
+    payload = {
+        'token': os.environ.get('TOKEN'),
+        'results': results,
+        'version': VERSION
+    }
+    r = requests.post(f'{os.environ.get("SERVER")}/send_result/', data=json.dumps(payload))
+    return r.status_code
 
-    # Страница Донатов
-    r = requests.get(f'{domain}/donate')
-    if 'bc1q95nlgsmz88qw3zluns76q2cv5r400lrtrq32m6' not in r.text:
-        tests_failed.append(f'{domain}/donate bitcoin адрес')
 
-    # Контакты
-    r = requests.get(f'{domain}/contact')
-    if 'https://t.me/s_nami_bot' not in r.text:
-        tests_failed.append(f'{domain}/contact бот связи')
+def run_test(test_type: str, domain: str, path: str, value: str) -> (bool, str):
+    r = requests.get(domain + path)
 
-    # Расследование
-    r = requests.get(f'{domain}/investigation/roskosmos-delo-na-milliard')
-    if 'Роскосмос: дело на миллиард' not in r.text:
-        tests_failed.append(f'{domain}/investigation/roskosmos-delo-na-milliard заголовок не совпадает')
-
-    # /uploads
-    r = requests.get(f'{domain}/uploads/64f0f340e322a656c737f_5d01eb5171.jpg')
-    if r.headers['Content-Type'] != 'image/jpeg':
-        tests_failed.append(f'{domain}/uploads/64f0f340e322a656c737f_5d01eb5171.jpg не image/jpeg')
-
-    if tests_failed:
-        send_report(tests_failed)
+    match test_type:
+        case "text_on_page":
+            if value not in r.text:
+                return False, 'Text not on page'
+            return True, 'Success'
+        case "content_type":
+            if r.headers['Content-Type'] != value:
+                return False, f'Content-Type {r.headers["Content-Type"]}'
+            return True, 'Success'
+        case _:
+            print(f'Unsupported test type {{ test_type }}')
+            return False, f'Unsupported test type {{ test_type }}'
 
 
 def main():
     while True:
         try:
-            r = requests.get(f'{os.environ.get("SERVER")}/domains/')
-            for domain in r.json()['domains']:
-                test(domain)
+            r = requests.get(f'{os.environ.get("SERVER")}/tests/')
+            domains = r.json()['domains']
+            tests = r.json()['tests']
+            results = {}
+            for domain in domains:
+                for test_id, test in tests.items():
+                    success, result = run_test(test['type'], domain, test['path'], test['value'])
+                    results[test_id] = {'domain': domain, 'success': success, 'result': result}
+            status_code = 0
+            while status_code != 200:
+                status_code = send_report(results)
+                time.sleep(60)
 
         except Exception as e:
             print(e)
-
-        time.sleep(60)
 
 
 if __name__ == '__main__':
